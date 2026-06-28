@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network Security Config for Hibari.
+
+    - All outbound OkHttp traffic (DoH queries, proxy connections) requires TLS.
+    - Cleartext is only permitted for the local proxy (127.0.0.1) because the
+      WebView → local proxy leg is localhost-only and never leaves the device.
+    - WebView's own TLS (CONNECT tunnels to real servers) is governed by
+      MIXED_CONTENT_NEVER_ALLOW and the WebViewClient SSL error handler,
+      not by this config.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Local proxy: localhost only, cleartext permitted (never leaves device) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>
