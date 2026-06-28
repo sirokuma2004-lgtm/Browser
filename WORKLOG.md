@@ -102,16 +102,63 @@ WORKLOG.md                                                            (更新)
 - [x] WebViewFactory 経由での生成を維持
 - [x] タブ切替で不要な WebView を適切に破棄
 
-### 次のステップ
+### 次のステップ（M1完了）
 - M2: セキュア DNS (DoH) — LocalProxyServer + DohResolver + ProxyController
 - 先に実機で ProxyController.isFeatureSupported(PROXY_OVERRIDE) を確認
+
+---
+
+## 2026-06-29 — M2: セキュア DNS（DoH）
+
+### 作業内容
+- **DohResolver** — OkHttp `DnsOverHttps` ラッパ。既知プロバイダはブートストラップIP設定で鶏卵問題を回避
+- **LocalProxyServer** — 127.0.0.1 ランダムポートの HTTP/HTTPS プロキシ
+  - CONNECT: DoH解決 → raw TCP トンネル（TLS 素通し、MITM なし）
+  - HTTP: DoH解決 → リクエスト転送 → レスポンス返却
+  - Bidirectional bridge で双方向ストリームを並列処理（Coroutines）
+- **ProxyManager** — LocalProxyServer ライフサイクル管理 + ProxyController 連携
+  - `WebViewFeature.isFeatureSupported(PROXY_OVERRIDE)` で対応確認
+  - 非対応端末は SettingsScreen でプライベートDNS案内を表示
+- **SettingsScreen** — 設定UI
+  - DoH ON/OFF スイッチ
+  - プロバイダ選択（Cloudflare / Google / AdGuard / NextDNS / カスタムURL）
+  - 広告ブロック ON/OFF、HTTPS-only、サードパーティCookie
+  - 閲覧データ削除
+- **BrowserViewModel** — DataStore 設定観察、プロキシ起動/停止ライフサイクル
+- **BrowserScreen** — ⚙ 設定ボタン追加
+
+### 作成/更新ファイル
+```
+app/.../net/DohResolver.kt         (更新: フル実装)
+app/.../net/LocalProxyServer.kt    (更新: フル実装)
+app/.../net/ProxyManager.kt        (新規)
+app/.../ui/SettingsScreen.kt       (新規)
+app/.../ui/BrowserViewModel.kt     (更新: M2対応)
+app/.../ui/BrowserScreen.kt        (更新: 設定ボタン)
+WORKLOG.md                         (更新)
+```
+
+### セキュリティ不変条件チェック（M2）
+- [x] プロキシは 127.0.0.1 のみにバインド（外部非公開）
+- [x] HTTPS は CONNECT トンネルで素通し（TLS 復号・MITM なし）
+- [x] SSL エラーは引き続き cancel（HibariWebViewClient）
+- [x] DoH解決失敗時は接続失敗（システム DNS にフォールバックしない）
+- [x] WebViewFeature.isFeatureSupported(PROXY_OVERRIDE) で確認
+- [x] テレメトリなし
+
+### PoC 注記
+実機での ProxyController 動作確認が必要。非対応端末の場合は
+SettingsScreen 内の InfoCard で「Android プライベート DNS」案内を表示する。
+
+### 次のステップ
+- M3: 広告ブロック — shouldInterceptRequest + DomainMatcher + FilterList
 
 ---
 
 ## TODO（将来マイルストーン）
 - [x] M0: 雛形＋WebView 堅牢化
 - [x] M1: タブ管理 + 履歴 (Room) + ブックマーク
-- [ ] M2: セキュア DNS (DoH) — ローカルプロキシ + OkHttp DnsOverHttps + ProxyController
+- [x] M2: セキュア DNS (DoH) — ローカルプロキシ + OkHttp DnsOverHttps + ProxyController
 - [ ] M3: 広告ブロック — shouldInterceptRequest + フィルタリスト + allowlist
 - [ ] M4: セキュリティ堅牢化総点検
 - [ ] M5: パフォーマンス最適化・リリースビルド

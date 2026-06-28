@@ -2,6 +2,8 @@ package com.example.hibari.ui
 
 import android.app.Application
 import android.os.Bundle
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hibari.bookmarks.BookmarkRepository
@@ -9,21 +11,27 @@ import com.example.hibari.browser.TabInfo
 import com.example.hibari.browser.TabManager
 import com.example.hibari.data.AppDatabase
 import com.example.hibari.data.HistoryEntity
+import com.example.hibari.data.SettingsDataStore
 import com.example.hibari.history.HistoryRepository
+import com.example.hibari.net.DohResolver
+import com.example.hibari.net.ProxyManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
 
+// ── UI state types ────────────────────────────────────────────────────────────
+
 data class BrowserUiState(
-    // Tabs
     val tabs: List<TabInfo> = emptyList(),
     val activeTabId: String = "",
-    // Active tab browsing state
     val currentUrl: String = "",
     val displayUrl: String = "",
     val pageTitle: String = "",
@@ -31,11 +39,20 @@ data class BrowserUiState(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val loadProgress: Int = 0,
-    // Address bar suggestions
     val suggestions: List<HistoryEntity> = emptyList(),
-    // Bookmark state for current page
     val isCurrentPageBookmarked: Boolean = false,
 )
+
+data class SettingsUiState(
+    val secureDnsEnabled: Boolean = false,
+    val dohProviderUrl: String = DohResolver.Preset.CLOUDFLARE.url,
+    val adBlockEnabled: Boolean = true,
+    val httpsOnly: Boolean = true,
+    val blockThirdPartyCookies: Boolean = true,
+    val proxyOverrideSupported: Boolean = false,
+)
+
+// ── ViewModel ─────────────────────────────────────────────────────────────────
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -43,14 +60,101 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val historyRepo = HistoryRepository(db.historyDao())
     val bookmarkRepo = BookmarkRepository(db.bookmarkDao())
     val tabManager = TabManager()
+    val proxyManager = ProxyManager(viewModelScope)
+    private val dataStore = SettingsDataStore(application)
 
     private val _uiState = MutableStateFlow(BrowserUiState())
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
 
+    // Settings state derived from DataStore flows
+    val settingsState: StateFlow<SettingsUiState> = combine(
+        dataStore.secureDnsEnabled,
+        dataStore.dohProviderUrl,
+        dataStore.adBlockEnabled,
+        dataStore.httpsOnly,
+        dataStore.blockThirdPartyCookies,
+    ) { values ->
+        SettingsUiState(
+            secureDnsEnabled = values[0] as Boolean,
+            dohProviderUrl = values[1] as String,
+            adBlockEnabled = values[2] as Boolean,
+            httpsOnly = values[3] as Boolean,
+            blockThirdPartyCookies = values[4] as Boolean,
+            proxyOverrideSupported = proxyManager.isProxyOverrideSupported,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
+
     private var suggestionJob: Job? = null
+    private var proxyPort: Int = -1
 
     init {
         syncTabsToState()
+        observeSecureDnsSettings()
+    }
+
+    // ── Secure DNS (M2) ──────────────────────────────────────────────────────
+
+    private fun observeSecureDnsSettings() {
+        viewModelScope.launch {
+            dataStore.secureDnsEnabled.collect { enabled ->
+                if (enabled) {
+                    val url = dataStore.dohProviderUrl.stateIn(viewModelScope).value
+                    startProxy(url)
+                } else {
+                    proxyManager.stop()
+                    proxyPort = -1
+                }
+            }
+        }
+    }
+
+    private fun startProxy(dohUrl: String) {
+        viewModelScope.launch {
+            val port = proxyManager.start(dohUrl)
+            if (port > 0) {
+                proxyPort = port
+                proxyManager.applyToWebView(port) {
+                    // Proxy is now active — WebView will use it for all requests
+                }
+            }
+        }
+    }
+
+    // ── Settings actions ─────────────────────────────────────────────────────
+
+    fun setSecureDnsEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setSecureDnsEnabled(enabled) }
+    }
+
+    fun setDohProvider(url: String) {
+        viewModelScope.launch {
+            dataStore.setDohProviderUrl(url)
+            // Update running proxy if active
+            if (proxyPort > 0) {
+                proxyManager.updateDohProvider(url)
+            }
+        }
+    }
+
+    fun setAdBlockEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setAdBlockEnabled(enabled) }
+    }
+
+    fun setHttpsOnly(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setHttpsOnly(enabled) }
+    }
+
+    fun setBlockThirdPartyCookies(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setBlockThirdPartyCookies(enabled) }
+    }
+
+    fun clearBrowsingData() {
+        viewModelScope.launch {
+            historyRepo.deleteAll()
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+            WebStorage.getInstance().deleteAllData()
+        }
     }
 
     // ── Tab management ───────────────────────────────────────────────────────
@@ -71,12 +175,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         syncTabsToState()
     }
 
-    /** Called by Compose when a WebView is about to be destroyed (tab switch / close). */
     fun onWebViewSuspending(tabId: String, state: Bundle) {
         tabManager.saveWebViewState(tabId, state)
     }
 
-    /** Returns saved WebView state for a tab (consumed once). */
     fun consumeSavedState(tabId: String): Bundle? = tabManager.consumeSavedState(tabId)
 
     // ── Page lifecycle ───────────────────────────────────────────────────────
@@ -105,7 +207,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             )
         }
         syncTabsToState()
-        // Record history (skip private tabs)
         val tab = tabManager.activeTab()
         if (tab != null && !tab.isPrivate && !url.isNullOrBlank()) {
             viewModelScope.launch {
@@ -168,7 +269,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (url.isBlank()) return
         viewModelScope.launch {
             if (_uiState.value.isCurrentPageBookmarked) {
-                // Remove — find by URL and delete (simplified: delete all with this URL)
                 val root = bookmarkRepo.getRootBookmarks()
                 root.filter { it.url == url }.forEach { bookmarkRepo.delete(it.id) }
                 _uiState.update { it.copy(isCurrentPageBookmarked = false) }
@@ -181,20 +281,25 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private fun checkBookmarkState(url: String) {
         viewModelScope.launch {
-            val bookmarked = bookmarkRepo.isBookmarked(url)
-            _uiState.update { it.copy(isCurrentPageBookmarked = bookmarked) }
+            _uiState.update { it.copy(isCurrentPageBookmarked = bookmarkRepo.isBookmarked(url)) }
         }
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    override fun onCleared() {
+        super.onCleared()
+        viewModelScope.launch { proxyManager.stop() }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private fun syncTabsToState() {
-        val activeId = tabManager.activeTabId
         val activeTab = tabManager.activeTab()
         _uiState.update { state ->
             state.copy(
                 tabs = tabManager.tabs,
-                activeTabId = activeId,
+                activeTabId = tabManager.activeTabId,
                 currentUrl = activeTab?.url ?: state.currentUrl,
                 displayUrl = activeTab?.url ?: state.displayUrl,
                 pageTitle = activeTab?.title ?: state.pageTitle,

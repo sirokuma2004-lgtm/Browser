@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +72,12 @@ private sealed class WebViewAction {
 @Composable
 fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    var showSettings by remember { mutableStateOf(false) }
+
+    if (showSettings) {
+        SettingsScreen(viewModel = viewModel, onBack = { showSettings = false })
+        return
+    }
 
     // Signal channel: BrowserScreen → TabWebView (cleared after consumption)
     var webViewAction by remember { mutableStateOf<WebViewAction?>(null) }
@@ -97,6 +104,7 @@ fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
                     },
                     onAddressTextChanged = { viewModel.onAddressBarTextChanged(it) },
                     onAddressFocusLost = { viewModel.clearSuggestions() },
+                    onSettings = { showSettings = true },
                 )
                 if (uiState.isLoading && uiState.loadProgress < 100) {
                     LinearProgressIndicator(
@@ -226,6 +234,7 @@ private fun AddressBar(
     onSuggestionClick: (HistoryEntity) -> Unit,
     onAddressTextChanged: (String) -> Unit,
     onAddressFocusLost: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     var addressText by remember { mutableStateOf(uiState.displayUrl) }
     var isFocused by remember { mutableStateOf(false) }
@@ -281,6 +290,9 @@ private fun AddressBar(
                     else Icons.Filled.BookmarkBorder,
                     contentDescription = "ブックマーク",
                 )
+            }
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "設定")
             }
         }
 
