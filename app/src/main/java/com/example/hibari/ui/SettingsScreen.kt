@@ -90,18 +90,6 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // ── Ad Block ─────────────────────────────────────────────────
-            SectionHeader("広告ブロック")
-
-            SwitchRow(
-                title = "広告・トラッカをブロック",
-                subtitle = "ブラウザ内でリクエストを遮断（VPN 不使用）",
-                checked = settings.adBlockEnabled,
-                onCheckedChange = { viewModel.setAdBlockEnabled(it) },
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
             // ── Security ─────────────────────────────────────────────────
             SectionHeader("セキュリティ")
 

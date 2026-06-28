@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\User\\\\\" | Where-Object { $_.PSIsContainer })",
+      "Bash(gh repo *)",
+      "Skill(claude-in-chrome)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(git add *)",
+      "Bash(git -c user.name=sirokuma2004-lgtm -c user.email=sirokuma2004@gmail.com commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\User\\\\Claude\\\\ブラウザ\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\hibari\\\\adblock\\\\DomainMatcher.kt\" -Force)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\User\\\\Claude\\\\ブラウザ\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\hibari\\\\adblock\\\\FilterList.kt\" -Force)",
+      "Bash(Write-Output \"Deleted adblock files\")"
+    ]
+  }
+}

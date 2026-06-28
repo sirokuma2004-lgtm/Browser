@@ -46,7 +46,6 @@ data class BrowserUiState(
 data class SettingsUiState(
     val secureDnsEnabled: Boolean = false,
     val dohProviderUrl: String = DohResolver.Preset.CLOUDFLARE.url,
-    val adBlockEnabled: Boolean = true,
     val httpsOnly: Boolean = true,
     val blockThirdPartyCookies: Boolean = true,
     val proxyOverrideSupported: Boolean = false,
@@ -70,16 +69,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val settingsState: StateFlow<SettingsUiState> = combine(
         dataStore.secureDnsEnabled,
         dataStore.dohProviderUrl,
-        dataStore.adBlockEnabled,
         dataStore.httpsOnly,
         dataStore.blockThirdPartyCookies,
     ) { values ->
         SettingsUiState(
             secureDnsEnabled = values[0] as Boolean,
             dohProviderUrl = values[1] as String,
-            adBlockEnabled = values[2] as Boolean,
-            httpsOnly = values[3] as Boolean,
-            blockThirdPartyCookies = values[4] as Boolean,
+            httpsOnly = values[2] as Boolean,
+            blockThirdPartyCookies = values[3] as Boolean,
             proxyOverrideSupported = proxyManager.isProxyOverrideSupported,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
@@ -134,10 +131,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 proxyManager.updateDohProvider(url)
             }
         }
-    }
-
-    fun setAdBlockEnabled(enabled: Boolean) {
-        viewModelScope.launch { dataStore.setAdBlockEnabled(enabled) }
     }
 
     fun setHttpsOnly(enabled: Boolean) {
