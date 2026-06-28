@@ -61,14 +61,56 @@ app/src/main/java/com/example/hibari/data/SettingsDataStore.kt (stub)
 - [x] エンジンを同梱しない: System WebView 使用
 - [x] JS ブリッジを Web に出さない
 
-### 次のステップ
+### 次のステップ（M0完了）
 - M1: タブ管理（追加/閉じる/切替＋サスペンド）、履歴 (Room)、ブックマーク
 - PoC確認: 実機で ProxyController (PROXY_OVERRIDE) が使えるか確認 → M2 の方針確定
 
 ---
 
+## 2026-06-29 — M1: タブ管理・履歴・ブックマーク
+
+### 作業内容
+- **TabManager** — タブの追加/閉じる/切替とサスペンド（WebView状態保存＋破棄）
+- **BrowserViewModel** — AndroidViewModel化（Room/DataStore アクセス）、マルチタブ対応
+- **BrowserScreen** — タブバー UI（水平スクロール、追加・閉じるボタン）
+- **HistoryRepository** — Room保存（URL重複時はvisitCount更新）、検索
+- **BookmarkRepository** — 追加・表示・削除
+- **NetscapeHtmlImporter** — Netscape HTML形式パーサ（SAF経由で取り込む準備）
+- アドレスバーに履歴サジェスト（入力200ms後にDB検索）
+- ブックマークトグルボタン（スター表示）
+
+### 作成/更新ファイル
+```
+app/src/main/java/com/example/hibari/browser/TabManager.kt          (更新)
+app/src/main/java/com/example/hibari/ui/BrowserViewModel.kt          (更新)
+app/src/main/java/com/example/hibari/ui/BrowserScreen.kt             (更新)
+app/src/main/java/com/example/hibari/history/HistoryRepository.kt    (新規)
+app/src/main/java/com/example/hibari/bookmarks/BookmarkRepository.kt (新規)
+app/src/main/java/com/example/hibari/bookmarks/NetscapeHtmlImporter.kt (新規)
+app/src/main/java/com/example/hibari/data/AppDatabase.kt             (更新: DAO拡充)
+WORKLOG.md                                                            (更新)
+```
+
+### サスペンド戦略
+- `key(activeTabId)` で Compose が別タブ切替時に TabWebView を再生成
+- `DisposableEffect(tabId)` の onDispose で `wv.saveState(bundle)` → TabManager に保存
+- 新タブ復元時: `TabManager.consumeSavedState(tabId)` → `wv.restoreState(bundle)`
+- メモリ効率: アクティブタブのみ WebView が生存、他はサスペンド状態
+
+### セキュリティ不変条件チェック（M1）
+- [x] 非プライベートタブのみ履歴を保存（isPrivate チェック）
+- [x] WebViewFactory 経由での生成を維持
+- [x] タブ切替で不要な WebView を適切に破棄
+
+### 次のステップ
+- M2: セキュア DNS (DoH) — LocalProxyServer + DohResolver + ProxyController
+- 先に実機で ProxyController.isFeatureSupported(PROXY_OVERRIDE) を確認
+
+---
+
 ## TODO（将来マイルストーン）
-- [ ] M1: タブ管理 + 履歴 (Room) + ブックマーク
+- [x] M0: 雛形＋WebView 堅牢化
+- [x] M1: タブ管理 + 履歴 (Room) + ブックマーク
 - [ ] M2: セキュア DNS (DoH) — ローカルプロキシ + OkHttp DnsOverHttps + ProxyController
 - [ ] M3: 広告ブロック — shouldInterceptRequest + フィルタリスト + allowlist
 - [ ] M4: セキュリティ堅牢化総点検

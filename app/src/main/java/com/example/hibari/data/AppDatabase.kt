@@ -40,14 +40,23 @@ interface BookmarkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(bookmark: BookmarkEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(bookmarks: List<BookmarkEntity>): List<Long>
+
     @Query("SELECT * FROM bookmarks WHERE parentFolderId IS NULL ORDER BY position ASC")
     suspend fun getRootBookmarks(): List<BookmarkEntity>
 
     @Query("SELECT * FROM bookmarks WHERE parentFolderId = :folderId ORDER BY position ASC")
     suspend fun getBookmarksInFolder(folderId: Long): List<BookmarkEntity>
 
+    @Query("SELECT * FROM bookmarks WHERE url = :url AND isFolder = 0 LIMIT 1")
+    suspend fun findByUrl(url: String): BookmarkEntity?
+
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM bookmarks")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -55,10 +64,16 @@ interface HistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: HistoryEntity): Long
 
+    @androidx.room.Update
+    suspend fun update(entry: HistoryEntity)
+
+    @Query("SELECT * FROM history WHERE url = :url LIMIT 1")
+    suspend fun findByUrl(url: String): HistoryEntity?
+
     @Query("SELECT * FROM history ORDER BY visitedAt DESC LIMIT 200")
     suspend fun getRecent(): List<HistoryEntity>
 
-    @Query("SELECT * FROM history WHERE url LIKE '%' || :query || '%' OR title LIKE '%' || :query || '%' ORDER BY visitedAt DESC LIMIT 20")
+    @Query("SELECT * FROM history WHERE url LIKE '%' || :query || '%' OR title LIKE '%' || :query || '%' ORDER BY visitedAt DESC LIMIT 10")
     suspend fun search(query: String): List<HistoryEntity>
 
     @Query("DELETE FROM history WHERE visitedAt < :cutoff")
