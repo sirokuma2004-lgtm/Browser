@@ -150,6 +150,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /** Called when a private tab's WebView is disposed. Wipes cookies/cache/storage. */
+    fun clearPrivateTabData() {
+        CookieManager.getInstance().removeAllCookies(null)
+        CookieManager.getInstance().flush()
+        WebStorage.getInstance().deleteAllData()
+    }
+
     // ── Tab management ───────────────────────────────────────────────────────
 
     fun createTab(url: String = "https://www.google.com", isPrivate: Boolean = false) {

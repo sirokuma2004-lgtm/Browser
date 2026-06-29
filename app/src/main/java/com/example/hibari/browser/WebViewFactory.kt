@@ -1,6 +1,7 @@
 package com.example.hibari.browser
 
 import android.content.Context
+import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.webkit.WebSettingsCompat
@@ -21,7 +22,11 @@ import com.example.hibari.BuildConfig
  */
 object WebViewFactory {
 
-    fun create(context: Context, client: HibariWebViewClient): WebView {
+    fun create(
+        context: Context,
+        client: HibariWebViewClient,
+        blockThirdPartyCookies: Boolean = true,
+    ): WebView {
         if (!BuildConfig.DEBUG) {
             // Disable WebView remote debugging in release; this is a process-wide static call.
             WebView.setWebContentsDebuggingEnabled(false)
@@ -70,7 +75,18 @@ object WebViewFactory {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
                 WebSettingsCompat.setSafeBrowsingEnabled(this, true)
             }
+
+            // Third-party cookie policy (security invariant)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, !blockThirdPartyCookies)
         }
+    }
+
+    /**
+     * Update the third-party cookie policy on an existing WebView.
+     * Call from the AndroidView update block when the setting changes.
+     */
+    fun applyThirdPartyCookies(webView: WebView, blockThirdPartyCookies: Boolean) {
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !blockThirdPartyCookies)
     }
 
     private fun buildUserAgent(defaultUa: String): String {

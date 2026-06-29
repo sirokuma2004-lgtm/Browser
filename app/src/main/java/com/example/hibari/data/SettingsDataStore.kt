@@ -22,7 +22,6 @@ class SettingsDataStore(private val context: Context) {
     private object Keys {
         val SECURE_DNS_ENABLED = booleanPreferencesKey("secure_dns_enabled")
         val DOH_PROVIDER_URL = stringPreferencesKey("doh_provider_url")
-        val AD_BLOCK_ENABLED = booleanPreferencesKey("ad_block_enabled")
         val HTTPS_ONLY = booleanPreferencesKey("https_only")
         val BLOCK_THIRD_PARTY_COOKIES = booleanPreferencesKey("block_third_party_cookies")
         val SEARCH_ENGINE_URL = stringPreferencesKey("search_engine_url")
@@ -41,14 +40,6 @@ class SettingsDataStore(private val context: Context) {
 
     suspend fun setDohProviderUrl(url: String) {
         context.dataStore.edit { it[Keys.DOH_PROVIDER_URL] = url }
-    }
-
-    // ── Ad Block ────────────────────────────────────────────────────────────
-    val adBlockEnabled: Flow<Boolean> = context.dataStore.data
-        .map { it[Keys.AD_BLOCK_ENABLED] ?: true }
-
-    suspend fun setAdBlockEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.AD_BLOCK_ENABLED] = enabled }
     }
 
     // ── Security ────────────────────────────────────────────────────────────

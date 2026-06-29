@@ -1,6 +1,8 @@
 package com.example.hibari.ui
 
 import android.os.Bundle
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.compose.foundation.background
@@ -72,6 +74,7 @@ private sealed class WebViewAction {
 @Composable
 fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    val settings by viewModel.settingsState.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
@@ -116,7 +119,6 @@ fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
                     tabs = uiState.tabs,
                     activeTabId = uiState.activeTabId,
                     onTabClick = { id ->
-                        // Switching tab clears the pending action for the old tab
                         webViewAction = null
                         viewModel.switchTab(id)
                     },
@@ -132,9 +134,13 @@ fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
             key(uiState.activeTabId) {
                 TabWebView(
                     tabId = uiState.activeTabId,
+                    isPrivate = uiState.tabs.find { it.id == uiState.activeTabId }?.isPrivate ?: false,
                     initialUrl = uiState.currentUrl,
+                    httpsOnly = settings.httpsOnly,
+                    blockThirdPartyCookies = settings.blockThirdPartyCookies,
                     restoreState = { viewModel.consumeSavedState(uiState.activeTabId) },
                     onSaveState = { id, bundle -> viewModel.onWebViewSuspending(id, bundle) },
+                    onPrivateTabClosed = { viewModel.clearPrivateTabData() },
                     action = webViewAction,
                     onActionConsumed = { webViewAction = null },
                     onPageStarted = { url -> viewModel.onPageStarted(url) },
@@ -154,9 +160,13 @@ fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
 @Composable
 private fun TabWebView(
     tabId: String,
+    isPrivate: Boolean,
     initialUrl: String,
+    httpsOnly: Boolean,
+    blockThirdPartyCookies: Boolean,
     restoreState: () -> Bundle?,
     onSaveState: (String, Bundle) -> Unit,
+    onPrivateTabClosed: () -> Unit,
     action: WebViewAction?,
     onActionConsumed: () -> Unit,
     onPageStarted: (String?) -> Unit,
@@ -167,6 +177,7 @@ private fun TabWebView(
     modifier: Modifier = Modifier,
 ) {
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
+    val clientRef = remember { mutableStateOf<HibariWebViewClient?>(null) }
 
     // Execute one-shot WebView commands
     LaunchedEffect(action) {
@@ -182,13 +193,17 @@ private fun TabWebView(
         onActionConsumed()
     }
 
-    // Save WebView state when this composable leaves (tab switch / close)
+    // Save WebView state when this composable leaves (tab switch / close).
+    // For private tabs: wipe cookies, cache, and storage on disposal.
     DisposableEffect(tabId) {
         onDispose {
             webViewRef.value?.let { wv ->
                 val bundle = Bundle()
                 wv.saveState(bundle)
                 onSaveState(tabId, bundle)
+                if (isPrivate) {
+                    onPrivateTabClosed()
+                }
             }
         }
     }
@@ -199,14 +214,14 @@ private fun TabWebView(
                 onPageStarted = { url, _ -> onPageStarted(url) },
                 onPageFinished = { url -> onPageFinished(url) },
                 onNavigationStateChanged = onNavigationStateChanged,
+                httpsOnly = httpsOnly,
             )
-            WebViewFactory.create(context, client).also { wv ->
-                wv.webChromeClient = object : WebChromeClient() {
-                    override fun onProgressChanged(view: WebView?, newProgress: Int) =
-                        onProgressChanged(newProgress)
-                    override fun onReceivedTitle(view: WebView?, title: String?) =
-                        onTitleReceived(title)
-                }
+            clientRef.value = client
+            WebViewFactory.create(context, client, blockThirdPartyCookies).also { wv ->
+                wv.webChromeClient = buildChromeClient(
+                    onProgressChanged = onProgressChanged,
+                    onTitleReceived = onTitleReceived,
+                )
                 webViewRef.value = wv
                 val saved = restoreState()
                 if (saved != null) wv.restoreState(saved)
@@ -215,10 +230,45 @@ private fun TabWebView(
         },
         update = { wv ->
             webViewRef.value = wv
+            clientRef.value?.updateHttpsOnly(httpsOnly)
+            WebViewFactory.applyThirdPartyCookies(wv, blockThirdPartyCookies)
             onNavigationStateChanged(wv.canGoBack(), wv.canGoForward())
         },
         modifier = modifier,
     )
+}
+
+/**
+ * Builds a WebChromeClient that:
+ *  - Forwards progress and title updates
+ *  - DENIES all permission requests (camera, mic, etc.) by default
+ *  - DENIES geolocation by default
+ *
+ * Per DESIGN.md §7: permissions are deny-by-default in v1.
+ */
+private fun buildChromeClient(
+    onProgressChanged: (Int) -> Unit,
+    onTitleReceived: (String?) -> Unit,
+): WebChromeClient = object : WebChromeClient() {
+
+    override fun onProgressChanged(view: WebView?, newProgress: Int) =
+        onProgressChanged(newProgress)
+
+    override fun onReceivedTitle(view: WebView?, title: String?) =
+        onTitleReceived(title)
+
+    // Deny camera, microphone, MIDI, etc. — deny-by-default (DESIGN.md §7)
+    override fun onPermissionRequest(request: PermissionRequest) {
+        request.deny()
+    }
+
+    // Deny geolocation — deny-by-default (DESIGN.md §7)
+    override fun onGeolocationPermissionsShowPrompt(
+        origin: String?,
+        callback: GeolocationPermissions.Callback?,
+    ) {
+        callback?.invoke(origin, false, false)
+    }
 }
 
 // ── Address Bar ──────────────────────────────────────────────────────────────
