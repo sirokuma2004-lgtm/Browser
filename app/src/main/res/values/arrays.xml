@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="doh_provider_names">
+        <item>Cloudflare (1.1.1.1)</item>
+        <item>Google (8.8.8.8)</item>
+        <item>AdGuard DNS（広告ブロック）</item>
+        <item>NextDNS</item>
+    </string-array>
+    <string-array name="doh_provider_urls">
+        <item>https://cloudflare-dns.com/dns-query</item>
+        <item>https://dns.google/dns-query</item>
+        <item>https://dns.adguard-dns.com/dns-query</item>
+        <item>https://dns.nextdns.io/dns-query</item>
+    </string-array>
+</resources>

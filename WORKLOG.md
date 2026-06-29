@@ -297,6 +297,49 @@ WORKLOG.md                      (更新)
 
 ---
 
+## 2026-06-29 — M5: Compose 廃止・View ベース全面移行（軽量化）
+
+### 変更理由
+Compose ランタイム (~4〜6 MB) が APK サイズの支配的要因になっており、軽量・快適優先の
+方針に反する。View ベースに移行して Via Browser と同等の軽さを目指す。
+
+### 変更内容
+
+#### 廃止
+- Compose BOM・UI・Material3・material-icons-extended をすべて依存から削除
+- `BrowserScreen.kt`、`SettingsScreen.kt`、`ui/theme/` を削除
+- `SettingsDataStore.kt` (DataStore) を削除 → SharedPreferences に置換
+
+#### 新規追加
+- `res/layout/activity_main.xml` — LinearLayout + HorizontalScrollView タブバー
+- `res/layout/item_tab.xml` — タブチップ View
+- `res/layout/item_suggestion.xml` — 履歴サジェスト行
+- `res/layout/activity_settings.xml` — 設定画面
+- `res/xml/preferences.xml` — PreferenceFragmentCompat 用設定定義
+- `res/values/arrays.xml` — DoH プロバイダ名/URL 配列
+- `res/drawable/ic_*.xml` — Material アイコン 9 本（ベクター）
+- `res/drawable/address_bar_bg.xml` — アドレスバー背景シェイプ
+- `data/BrowserPreferences.kt` — SharedPreferences ラッパー（StateFlow 公開）
+- `ui/SettingsActivity.kt` — PreferenceFragmentCompat ベース設定画面
+  - SAF ランチャーでブックマーク HTML インポート
+  - 閲覧データ削除（確認ダイアログ付き）
+
+#### 変更
+- `MainActivity.kt` — View バインディング + ViewModel 観察 + WebView マウント
+  - ActivityResultContracts 不要（設定は SettingsActivity に委譲）
+  - タブバーは LinearLayout に動的 View 追加
+  - `SuggestionAdapter` (ListAdapter) を同ファイルに配置
+- `BrowserViewModel.kt` — DataStore → BrowserPreferences に置換（coroutine 不要な setter）
+- `build.gradle.kts` — Compose 依存削除、ViewBinding・AppCompat・Material・RecyclerView・Preference 追加
+- `proguard-rules.pro` — Compose ルール削除、Preference ルール追加
+
+### セキュリティ不変条件チェック（M5）
+- [x] JS ブリッジ未公開・SSL エラー未承認・file:// 無効は WebViewFactory に集約したまま維持
+- [x] 権限拒否・SafeBrowsing は HibariWebViewClient/WebChromeClient で継続
+- [x] テレメトリなし
+
+---
+
 ## TODO（将来マイルストーン）
 - [x] M0: 雛形＋WebView 堅牢化
 - [x] M1: タブ管理 + 履歴 (Room) + ブックマーク
@@ -305,3 +348,4 @@ WORKLOG.md                      (更新)
 - [x] M3（旧M4）: セキュリティ堅牢化
 - [x] M4: パフォーマンス最適化・リリースビルド
 - [x] ブックマーク SAF インポート UI 接続（DESIGN §14 受け入れ基準完了）
+- [x] M5: Compose 廃止 → View ベース全面移行（APK 軽量化）

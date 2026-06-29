@@ -11,7 +11,10 @@
       "Bash(git push *)",
       "Bash(Remove-Item \"C:\\\\Users\\\\User\\\\Claude\\\\ブラウザ\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\hibari\\\\adblock\\\\DomainMatcher.kt\" -Force)",
       "Bash(Remove-Item \"C:\\\\Users\\\\User\\\\Claude\\\\ブラウザ\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\hibari\\\\adblock\\\\FilterList.kt\" -Force)",
-      "Bash(Write-Output \"Deleted adblock files\")"
+      "Bash(Write-Output \"Deleted adblock files\")",
+      "PowerShell(java *)",
+      "PowerShell(Get-Item *)",
+      "Bash(git rm *)"
     ]
   }
 }

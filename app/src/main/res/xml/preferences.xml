@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="セキュア DNS（DoH）">
+
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="secure_dns_enabled"
+            app:summary="名前解決を暗号化（Chrome の「セキュア DNS」相当）"
+            app:title="セキュア DNS を使用" />
+
+        <ListPreference
+            app:defaultValue="https://cloudflare-dns.com/dns-query"
+            app:dependency="secure_dns_enabled"
+            app:entries="@array/doh_provider_names"
+            app:entryValues="@array/doh_provider_urls"
+            app:key="doh_provider_url"
+            app:title="プロバイダ" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="セキュリティ">
+
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="https_only"
+            app:summary="http:// サイトを https:// にアップグレード"
+            app:title="HTTPS のみモード" />
+
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="block_third_party_cookies"
+            app:summary="トラッキング Cookie を制限"
+            app:title="サードパーティ Cookie をブロック" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="ブックマーク">
+
+        <Preference
+            app:key="import_bookmarks"
+            app:summary="Netscape HTML ファイル（Chrome 等からエクスポート）から取り込む"
+            app:title="ブックマークをインポート" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="データ">
+
+        <Preference
+            app:key="clear_browsing_data"
+            app:summary="履歴・Cookie・キャッシュを消去"
+            app:title="閲覧データを削除" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

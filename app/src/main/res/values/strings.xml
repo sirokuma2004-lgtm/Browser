@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hibari</string>
-    <string name="address_bar_hint">URLまたは検索キーワードを入力</string>
+    <string name="address_bar_hint">URLまたは検索</string>
     <string name="nav_back">戻る</string>
     <string name="nav_forward">進む</string>
     <string name="nav_refresh">更新</string>
@@ -13,4 +13,9 @@
     <string name="menu_new_private_tab">新しいプライベートタブ</string>
     <string name="ssl_error_title">接続が安全でありません</string>
     <string name="ssl_error_message">このサイトの証明書に問題があります。接続を中断しました。</string>
+    <string name="tab_close">タブを閉じる</string>
+    <string name="download_title">ダウンロード</string>
+    <string name="download_confirm">「%s」をダウンロードしますか？</string>
+    <string name="download_ok">ダウンロード</string>
+    <string name="cancel">キャンセル</string>
 </resources>

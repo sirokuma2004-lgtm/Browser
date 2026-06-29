@@ -1,20 +1,17 @@
 package com.example.hibari.ui
 
 import android.app.Application
-import android.content.Context
-import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hibari.bookmarks.BookmarkRepository
-import com.example.hibari.bookmarks.NetscapeHtmlImporter
 import com.example.hibari.browser.TabInfo
 import com.example.hibari.browser.TabManager
 import com.example.hibari.data.AppDatabase
+import com.example.hibari.data.BrowserPreferences
 import com.example.hibari.data.HistoryEntity
-import com.example.hibari.data.SettingsDataStore
 import com.example.hibari.history.HistoryRepository
 import com.example.hibari.net.DohResolver
 import com.example.hibari.net.ProxyManager
@@ -63,17 +60,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val bookmarkRepo = BookmarkRepository(db.bookmarkDao())
     val tabManager = TabManager()
     val proxyManager = ProxyManager(viewModelScope)
-    private val dataStore = SettingsDataStore(application)
+    private val prefs = BrowserPreferences(application)
 
     private val _uiState = MutableStateFlow(BrowserUiState())
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
 
-    // Settings state derived from DataStore flows
     val settingsState: StateFlow<SettingsUiState> = combine(
-        dataStore.secureDnsEnabled,
-        dataStore.dohProviderUrl,
-        dataStore.httpsOnly,
-        dataStore.blockThirdPartyCookies,
+        prefs.secureDnsEnabled,
+        prefs.dohProviderUrl,
+        prefs.httpsOnly,
+        prefs.blockThirdPartyCookies,
     ) { values ->
         SettingsUiState(
             secureDnsEnabled = values[0] as Boolean,
@@ -83,9 +79,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             proxyOverrideSupported = proxyManager.isProxyOverrideSupported,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
-
-    private val _importResultMessage = MutableStateFlow<String?>(null)
-    val importResultMessage: StateFlow<String?> = _importResultMessage.asStateFlow()
 
     private var suggestionJob: Job? = null
     private var proxyPort: Int = -1
@@ -99,10 +92,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private fun observeSecureDnsSettings() {
         viewModelScope.launch {
-            dataStore.secureDnsEnabled.collect { enabled ->
+            prefs.secureDnsEnabled.collect { enabled ->
                 if (enabled) {
-                    val url = dataStore.dohProviderUrl.stateIn(viewModelScope).value
-                    startProxy(url)
+                    startProxy(prefs.dohProviderUrl.value)
                 } else {
                     proxyManager.stop()
                     proxyPort = -1
@@ -116,36 +108,25 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             val port = proxyManager.start(dohUrl)
             if (port > 0) {
                 proxyPort = port
-                proxyManager.applyToWebView(port) {
-                    // Proxy is now active — WebView will use it for all requests
-                }
+                proxyManager.applyToWebView(port) {}
             }
         }
     }
 
     // ── Settings actions ─────────────────────────────────────────────────────
 
-    fun setSecureDnsEnabled(enabled: Boolean) {
-        viewModelScope.launch { dataStore.setSecureDnsEnabled(enabled) }
-    }
+    fun setSecureDnsEnabled(enabled: Boolean) = prefs.setSecureDnsEnabled(enabled)
 
     fun setDohProvider(url: String) {
-        viewModelScope.launch {
-            dataStore.setDohProviderUrl(url)
-            // Update running proxy if active
-            if (proxyPort > 0) {
-                proxyManager.updateDohProvider(url)
-            }
+        prefs.setDohProviderUrl(url)
+        if (proxyPort > 0) {
+            viewModelScope.launch { proxyManager.updateDohProvider(url) }
         }
     }
 
-    fun setHttpsOnly(enabled: Boolean) {
-        viewModelScope.launch { dataStore.setHttpsOnly(enabled) }
-    }
+    fun setHttpsOnly(enabled: Boolean) = prefs.setHttpsOnly(enabled)
 
-    fun setBlockThirdPartyCookies(enabled: Boolean) {
-        viewModelScope.launch { dataStore.setBlockThirdPartyCookies(enabled) }
-    }
+    fun setBlockThirdPartyCookies(enabled: Boolean) = prefs.setBlockThirdPartyCookies(enabled)
 
     fun clearBrowsingData() {
         viewModelScope.launch {
@@ -156,7 +137,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Called when a private tab's WebView is disposed. Wipes cookies/cache/storage. */
     fun clearPrivateTabData() {
         CookieManager.getInstance().removeAllCookies(null)
         CookieManager.getInstance().flush()
@@ -289,28 +269,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(isCurrentPageBookmarked = bookmarkRepo.isBookmarked(url)) }
         }
-    }
-
-    // ── Bookmark import ──────────────────────────────────────────────────────
-
-    fun importBookmarks(context: Context, uri: Uri) {
-        viewModelScope.launch {
-            try {
-                val stream = context.contentResolver.openInputStream(uri) ?: run {
-                    _importResultMessage.value = "ファイルを開けませんでした"
-                    return@launch
-                }
-                val result = NetscapeHtmlImporter().import(stream, bookmarkRepo)
-                _importResultMessage.value =
-                    "インポート完了: ${result.imported} 件（スキップ: ${result.skipped} 件）"
-            } catch (e: Exception) {
-                _importResultMessage.value = "インポート失敗: ${e.message}"
-            }
-        }
-    }
-
-    fun clearImportResult() {
-        _importResultMessage.value = null
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
