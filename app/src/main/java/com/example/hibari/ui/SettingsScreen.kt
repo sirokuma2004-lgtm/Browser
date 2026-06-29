@@ -1,5 +1,8 @@
 package com.example.hibari.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.hibari.net.DohResolver
 
@@ -43,6 +47,25 @@ fun SettingsScreen(
     onBack: () -> Unit,
 ) {
     val settings by viewModel.settingsState.collectAsState()
+    val importResult by viewModel.importResultMessage.collectAsState()
+    val context = LocalContext.current
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.importBookmarks(context, uri)
+    }
+
+    importResult?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearImportResult() },
+            title = { Text("インポート結果") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearImportResult() }) { Text("OK") }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -109,7 +132,18 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            // ── Bookmarks ────────────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            SectionHeader("ブックマーク")
+
+            TextRow(
+                title = "ブックマークをインポート",
+                subtitle = "Netscape HTML ファイル（Chrome 等からエクスポート）から取り込む",
+                onClick = { importLauncher.launch("text/html") },
+            )
+
             // ── Data ─────────────────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             SectionHeader("データ")
 
             TextRow(

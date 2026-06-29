@@ -221,10 +221,87 @@ AGP 8.2.2 は Java 11+ が必須。ビルドするには Java 11 以上のイン
 
 ---
 
+## 2026-06-29 — M4: パフォーマンス最適化・リリースビルド
+
+### 作業内容
+
+#### WebView ライフサイクル連動（バッテリー節約）
+- `TabWebView` に `DisposableEffect(lifecycle)` を追加
+- `LifecycleEventObserver` で `ON_PAUSE → wv.onPause()` / `ON_RESUME → wv.onResume()`
+- アプリがバックグラウンド時にバックグラウンドタブの JS タイマー・アニメーションが停止
+
+#### ダウンロード確認ダイアログ
+- `WebView.setDownloadListener()` でダウンロードリクエストをインターセプト
+- `URLUtil.guessFileName()` でファイル名を推測し確認ダイアログを表示
+- 確認後に `DownloadManager.Request` でシステムダウンローダーに委譲
+- 独自ダウンロードロジックを持たないシンプルな実装
+
+#### リリースビルド設定
+- `versionCode = 4`, `versionName = "1.0.0"` に更新
+- `release { isDebuggable = false }` を明示
+- `proguard-rules.pro` を整備:
+  - OkHttp DnsOverHttps の keep ルールを追加
+  - Room `@Entity` / `@Dao` を keep
+  - DataStore keep
+  - スタックトレース可読性のため `SourceFile,LineNumberTable` を保持
+
+### 作成/更新ファイル
+```
+app/.../ui/BrowserScreen.kt      (ライフサイクル連動・ダウンロードハンドラ追加)
+app/build.gradle.kts             (versionCode/Name 更新、isDebuggable=false 明示)
+app/proguard-rules.pro           (OkHttp DnsOverHttps・Room・DataStore ルール整備)
+WORKLOG.md                       (更新)
+```
+
+### パフォーマンス規約チェック（M4）
+- [x] エンジン非同梱（System WebView のまま）
+- [x] 起動を妨げない（DoH/プロキシ起動は BG Coroutine 済み）
+- [x] バックグラウンドタブはサスペンド（key(activeTabId) + DisposableEffect 済み）
+- [x] バックグラウンド時 WebView.onPause() 呼び出しでリソース解放
+- [x] ダウンロードはシステム委譲（独自ロジックなし）
+- [x] リリースビルドで R8 最適化（minify + shrink）、debug 無効化
+
+### 絶対原則チェック（M4）
+- [x] 新規依存なし（LifecycleEventObserver は既存依存の一部、DownloadManager は OS API）
+- [x] テレメトリなし
+
+---
+
+---
+
+## 2026-06-29 — ブックマーク SAF インポート UI 接続
+
+### 作業内容
+M1 で実装済みの `NetscapeHtmlImporter` を SettingsScreen から実際に呼び出せるよう接続。
+
+- **BrowserViewModel** — `importBookmarks(context, uri)` を追加（SAF URI → InputStream → NetscapeHtmlImporter）
+  - `importResultMessage: StateFlow<String?>` でインポート結果をUI通知
+  - `clearImportResult()` で通知を消去
+- **SettingsScreen** — 「ブックマーク」セクションを追加
+  - `rememberLauncherForActivityResult(GetContent())` で SAF ファイルピッカを起動
+  - `importLauncher.launch("text/html")` で HTML ファイルを選択
+  - インポート完了後に結果ダイアログを表示（imported 件数 / skipped 件数）
+
+### 作成/更新ファイル
+```
+app/.../ui/BrowserViewModel.kt  (importBookmarks / importResultMessage / clearImportResult 追加)
+app/.../ui/SettingsScreen.kt    (SAF ランチャー + ブックマークセクション + 結果ダイアログ)
+WORKLOG.md                      (更新)
+```
+
+### 受け入れ基準チェック（DESIGN §14）
+- [x] SAF で選んだ Netscape HTML を取り込める
+- [x] 重複 URL はスキップ（DuplicatePolicy.SKIP デフォルト）
+- [x] インポート結果（件数）をダイアログで表示
+- [x] VPN・端末全体設定に触れない（SAF 経由のファイルアクセスのみ）
+
+---
+
 ## TODO（将来マイルストーン）
 - [x] M0: 雛形＋WebView 堅牢化
 - [x] M1: タブ管理 + 履歴 (Room) + ブックマーク
 - [x] M2: セキュア DNS (DoH) — ローカルプロキシ + OkHttp DnsOverHttps + ProxyController
 - [~] M3: ~~shouldInterceptRequest 広告ブロック~~ → **廃止**。AdGuard DNS で代替
 - [x] M3（旧M4）: セキュリティ堅牢化
-- [ ] M4: パフォーマンス最適化・リリースビルド
+- [x] M4: パフォーマンス最適化・リリースビルド
+- [x] ブックマーク SAF インポート UI 接続（DESIGN §14 受け入れ基準完了）

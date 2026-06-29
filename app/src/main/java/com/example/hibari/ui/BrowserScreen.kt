@@ -1,8 +1,13 @@
 package com.example.hibari.ui
 
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import android.webkit.DownloadListener
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
+import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.compose.foundation.background
@@ -31,6 +36,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,11 +58,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.hibari.browser.HibariWebViewClient
 import com.example.hibari.browser.TabInfo
@@ -71,11 +82,14 @@ private sealed class WebViewAction {
     object Stop : WebViewAction()
 }
 
+private data class DownloadInfo(val url: String, val mimeType: String, val fileName: String)
+
 @Composable
 fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val settings by viewModel.settingsState.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
+    var pendingDownload by remember { mutableStateOf<DownloadInfo?>(null) }
 
     if (showSettings) {
         SettingsScreen(viewModel = viewModel, onBack = { showSettings = false })
@@ -128,8 +142,6 @@ fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
             }
         }
 
-        // Re-create the WebView composable whenever the active tab changes.
-        // DisposableEffect inside TabWebView saves the state before destruction.
         Box(modifier = Modifier.fillMaxSize()) {
             key(uiState.activeTabId) {
                 TabWebView(
@@ -141,6 +153,9 @@ fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
                     restoreState = { viewModel.consumeSavedState(uiState.activeTabId) },
                     onSaveState = { id, bundle -> viewModel.onWebViewSuspending(id, bundle) },
                     onPrivateTabClosed = { viewModel.clearPrivateTabData() },
+                    onDownloadRequest = { url, mime, name ->
+                        pendingDownload = DownloadInfo(url, mime, name)
+                    },
                     action = webViewAction,
                     onActionConsumed = { webViewAction = null },
                     onPageStarted = { url -> viewModel.onPageStarted(url) },
@@ -152,6 +167,19 @@ fun BrowserScreen(viewModel: BrowserViewModel = viewModel()) {
                 )
             }
         }
+    }
+
+    // Download confirmation dialog
+    pendingDownload?.let { info ->
+        val context = LocalContext.current
+        DownloadConfirmDialog(
+            fileName = info.fileName,
+            onConfirm = {
+                startDownload(context, info)
+                pendingDownload = null
+            },
+            onDismiss = { pendingDownload = null },
+        )
     }
 }
 
@@ -167,6 +195,7 @@ private fun TabWebView(
     restoreState: () -> Bundle?,
     onSaveState: (String, Bundle) -> Unit,
     onPrivateTabClosed: () -> Unit,
+    onDownloadRequest: (url: String, mimeType: String, fileName: String) -> Unit,
     action: WebViewAction?,
     onActionConsumed: () -> Unit,
     onPageStarted: (String?) -> Unit,
@@ -178,6 +207,20 @@ private fun TabWebView(
 ) {
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     val clientRef = remember { mutableStateOf<HibariWebViewClient?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    // Pause/resume WebView with the app lifecycle to stop background JS/animations
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> webViewRef.value?.onPause()
+                Lifecycle.Event.ON_RESUME -> webViewRef.value?.onResume()
+                else -> {}
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
 
     // Execute one-shot WebView commands
     LaunchedEffect(action) {
@@ -201,9 +244,7 @@ private fun TabWebView(
                 val bundle = Bundle()
                 wv.saveState(bundle)
                 onSaveState(tabId, bundle)
-                if (isPrivate) {
-                    onPrivateTabClosed()
-                }
+                if (isPrivate) onPrivateTabClosed()
             }
         }
     }
@@ -222,6 +263,7 @@ private fun TabWebView(
                     onProgressChanged = onProgressChanged,
                     onTitleReceived = onTitleReceived,
                 )
+                wv.setDownloadListener(buildDownloadListener(onDownloadRequest))
                 webViewRef.value = wv
                 val saved = restoreState()
                 if (saved != null) wv.restoreState(saved)
@@ -238,13 +280,13 @@ private fun TabWebView(
     )
 }
 
+// ── WebChromeClient factory ───────────────────────────────────────────────────
+
 /**
  * Builds a WebChromeClient that:
  *  - Forwards progress and title updates
- *  - DENIES all permission requests (camera, mic, etc.) by default
- *  - DENIES geolocation by default
- *
- * Per DESIGN.md §7: permissions are deny-by-default in v1.
+ *  - DENIES all permission requests (camera, mic, etc.) — deny-by-default (DESIGN.md §7)
+ *  - DENIES geolocation — deny-by-default
  */
 private fun buildChromeClient(
     onProgressChanged: (Int) -> Unit,
@@ -257,18 +299,60 @@ private fun buildChromeClient(
     override fun onReceivedTitle(view: WebView?, title: String?) =
         onTitleReceived(title)
 
-    // Deny camera, microphone, MIDI, etc. — deny-by-default (DESIGN.md §7)
     override fun onPermissionRequest(request: PermissionRequest) {
         request.deny()
     }
 
-    // Deny geolocation — deny-by-default (DESIGN.md §7)
     override fun onGeolocationPermissionsShowPrompt(
         origin: String?,
         callback: GeolocationPermissions.Callback?,
     ) {
         callback?.invoke(origin, false, false)
     }
+}
+
+// ── DownloadListener factory ──────────────────────────────────────────────────
+
+private fun buildDownloadListener(
+    onDownloadRequest: (url: String, mimeType: String, fileName: String) -> Unit,
+): DownloadListener = DownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+    val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+    onDownloadRequest(url, mimeType ?: "*/*", fileName)
+}
+
+// ── Download helpers ─────────────────────────────────────────────────────────
+
+private fun startDownload(context: Context, info: DownloadInfo) {
+    val request = DownloadManager.Request(Uri.parse(info.url)).apply {
+        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        setDestinationInExternalPublicDir(
+            android.os.Environment.DIRECTORY_DOWNLOADS,
+            info.fileName,
+        )
+        setMimeType(info.mimeType)
+        addRequestHeader("User-Agent", android.webkit.WebSettings.getDefaultUserAgent(context))
+    }
+    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    dm.enqueue(request)
+}
+
+@Composable
+private fun DownloadConfirmDialog(
+    fileName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("ダウンロード") },
+        text = { Text("「$fileName」をダウンロードしますか？") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("ダウンロード") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("キャンセル") }
+        },
+    )
 }
 
 // ── Address Bar ──────────────────────────────────────────────────────────────

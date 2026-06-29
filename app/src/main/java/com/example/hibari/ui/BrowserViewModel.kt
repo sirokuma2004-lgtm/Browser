@@ -1,12 +1,15 @@
 package com.example.hibari.ui
 
 import android.app.Application
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hibari.bookmarks.BookmarkRepository
+import com.example.hibari.bookmarks.NetscapeHtmlImporter
 import com.example.hibari.browser.TabInfo
 import com.example.hibari.browser.TabManager
 import com.example.hibari.data.AppDatabase
@@ -80,6 +83,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             proxyOverrideSupported = proxyManager.isProxyOverrideSupported,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
+
+    private val _importResultMessage = MutableStateFlow<String?>(null)
+    val importResultMessage: StateFlow<String?> = _importResultMessage.asStateFlow()
 
     private var suggestionJob: Job? = null
     private var proxyPort: Int = -1
@@ -283,6 +289,28 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _uiState.update { it.copy(isCurrentPageBookmarked = bookmarkRepo.isBookmarked(url)) }
         }
+    }
+
+    // ── Bookmark import ──────────────────────────────────────────────────────
+
+    fun importBookmarks(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val stream = context.contentResolver.openInputStream(uri) ?: run {
+                    _importResultMessage.value = "ファイルを開けませんでした"
+                    return@launch
+                }
+                val result = NetscapeHtmlImporter().import(stream, bookmarkRepo)
+                _importResultMessage.value =
+                    "インポート完了: ${result.imported} 件（スキップ: ${result.skipped} 件）"
+            } catch (e: Exception) {
+                _importResultMessage.value = "インポート失敗: ${e.message}"
+            }
+        }
+    }
+
+    fun clearImportResult() {
+        _importResultMessage.value = null
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
